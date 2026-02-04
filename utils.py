@@ -40,6 +40,8 @@ def export_debate_result(result: Dict, output_path: Optional[str] = None,
     if format is None and output_path:
         if output_path.endswith('.md'):
             format = "markdown"
+        elif output_path.endswith('.txt'):
+            format = "text"
         else:
             format = "json"
     elif format is None:
@@ -61,6 +63,10 @@ def export_debate_result(result: Dict, output_path: Optional[str] = None,
         md_content = _result_to_markdown(result)
         with open(path, "w", encoding="utf-8") as f:
             f.write(md_content)
+    elif format == "text":
+        text_content = _result_to_text(result)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text_content)
     else:
         raise ValueError(f"不支持的格式: {format}")
     
@@ -103,6 +109,51 @@ def _result_to_markdown(result: Dict) -> str:
     # 最终总结
     lines.extend([
         "## 最终总结",
+        "",
+        result.get("final_summary", ""),
+        ""
+    ])
+    
+    return "\n".join(lines)
+
+
+def _result_to_text(result: Dict) -> str:
+    """将辩论结果转换为纯文本格式"""
+    lines = [
+        "=" * 60,
+        f"辩论记录: {result.get('topic', '未知主题')}",
+        "=" * 60,
+        "",
+        f"辩论轮数: {result.get('rounds', 0)}",
+        f"记录时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        "",
+        "-" * 60,
+        ""
+    ]
+    
+    # 辩论历史
+    for record in result.get("history", []):
+        lines.extend([
+            f"【第 {record.get('round', '?')} 轮辩论】",
+            "",
+            "▶ 智能体A (正方):",
+            record.get("agent_a", ""),
+            "",
+            "▶ 智能体B (反方):",
+            record.get("agent_b", ""),
+            "",
+            "▶ 裁判评判:",
+            record.get("evaluation", ""),
+            "",
+            "-" * 60,
+            ""
+        ])
+    
+    # 最终总结
+    lines.extend([
+        "=" * 60,
+        "【最终总结】",
+        "=" * 60,
         "",
         result.get("final_summary", ""),
         ""

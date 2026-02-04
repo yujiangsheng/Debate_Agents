@@ -32,6 +32,7 @@
 >>> system.interactive_mode()
 """
 
+import gc
 from typing import List, Dict, Optional
 from rich.console import Console
 from rich.panel import Panel
@@ -163,12 +164,16 @@ class DebateSystem:
         for round_num in range(1, max_rounds + 1):
             self._print_round_header(round_num)
             
+            # 获取历史记录（当前轮之前的所有记录）
+            history_for_agents = self.debate_history.copy() if self.debate_history else None
+            
             # 智能体A发言
             self.console.print("[bold green]【🅰️ 智能体A发言】[/bold green]")
             with self.console.status("[green]思考中...[/green]"):
                 view_a = self.agent_a.debate(
                     topic, opponent_view=view_b, 
-                    use_tools=use_tools, judge_feedback=last_eval
+                    use_tools=use_tools, judge_feedback=last_eval,
+                    debate_history=history_for_agents
                 )
             self.console.print(Panel(Markdown(view_a), title="智能体A", border_style="green"))
             
@@ -177,7 +182,8 @@ class DebateSystem:
             with self.console.status("[yellow]思考中...[/yellow]"):
                 view_b = self.agent_b.debate(
                     topic, opponent_view=view_a,
-                    use_tools=use_tools, judge_feedback=last_eval
+                    use_tools=use_tools, judge_feedback=last_eval,
+                    debate_history=history_for_agents
                 )
             self.console.print(Panel(Markdown(view_b), title="智能体B", border_style="yellow"))
             
@@ -199,6 +205,9 @@ class DebateSystem:
                 "agent_b": view_b,
                 "evaluation": evaluation
             })
+            
+            # 每轮后清理内存，防止 OOM
+            gc.collect()
             
             # 检查共识
             if early_stop and round_num > 1:

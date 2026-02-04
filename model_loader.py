@@ -195,6 +195,9 @@ class QwenModel:
                     pad_token_id=QwenModel._tokenizer.eos_token_id,
                     use_cache=True
                 )
+                # MPS 内存管理：定期清理缓存防止 OOM
+                if hasattr(torch.mps, 'empty_cache'):
+                    torch.mps.empty_cache()
             else:
                 generated_ids = QwenModel._model.generate(
                     **model_inputs,

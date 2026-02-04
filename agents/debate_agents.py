@@ -24,7 +24,7 @@
 >>> view_b = agent_b.debate("人工智能是否会取代人类工作", opponent_view=view_a)
 """
 
-from typing import Optional
+from typing import Optional, List, Dict
 from .base_agent import BaseAgent
 
 
@@ -124,14 +124,21 @@ class DebateAgent(BaseAgent):
 【辩论原则】
 1. 坚定{cfg["position"]}：你必须坚持{cfg["position"]}立场，{cfg["action"]}辩题中的主张
 2. 聚焦主题：所有论述必须紧扣原始问题，不要偏离话题
-3. 针锋相对：如果有对方观点，直接反驳其论点，指出漏洞
-4. 有限让步：可以承认对方某些细节合理，但绝不动摇核心立场
-5. 回应裁判：如果有裁判反馈，认真对待并回应
+3. 精确引用：反驳对方时，必须【直接引用】对方的原话或核心观点，然后逐一反驳
+4. 针锋相对：针对对方的【具体论据】进行反驳，指出其逻辑漏洞或事实错误
+5. 有限让步：可以承认对方某些细节合理，但绝不动摇核心立场
+6. 回应裁判：如果有裁判反馈，必须针对裁判指出的问题逐一回应
+
+【引用格式要求】
+反驳时必须使用类似格式：
+- 「对方说：'xxx'」→ 我的反驳是...
+- 针对对方提出的「xxx论点」，我认为...
 
 请用中文回答，语言犀利有力，坚定捍卫{cfg["position"]}立场！"""
     
     def debate(self, topic: str, opponent_view: Optional[str] = None,
-               use_tools: bool = False, judge_feedback: Optional[str] = None) -> str:
+               use_tools: bool = False, judge_feedback: Optional[str] = None,
+               debate_history: Optional[List[Dict]] = None) -> str:
         """
         进行辩论发言
         
@@ -140,11 +147,13 @@ class DebateAgent(BaseAgent):
         topic : str
             辩论主题
         opponent_view : str, optional
-            对方的观点 (首轮发言时为 None)
+            对方的最新观点 (首轮发言时为 None)
         use_tools : bool, optional
             是否使用搜索/RAG工具获取信息 (默认: False)
         judge_feedback : str, optional
             裁判的评判和建议 (首轮发言时为 None)
+        debate_history : List[Dict], optional
+            完整的辩论历史记录，包含之前所有轮次的发言
             
         Returns
         -------
@@ -161,19 +170,37 @@ class DebateAgent(BaseAgent):
             if self.rag_tool:
                 context += self.retrieve(topic)
         
+        # 构建辩论历史摘要
+        history_summary = ""
+        if debate_history:
+            history_summary = "\n【历史辩论记录】\n"
+            for record in debate_history:
+                history_summary += f"--- 第 {record['round']} 轮 ---\n"
+                history_summary += f"正方观点：{record['agent_a'][:500]}...\n" if len(record['agent_a']) > 500 else f"正方观点：{record['agent_a']}\n"
+                history_summary += f"反方观点：{record['agent_b'][:500]}...\n" if len(record['agent_b']) > 500 else f"反方观点：{record['agent_b']}\n"
+                if record.get('evaluation'):
+                    history_summary += f"裁判评判：{record['evaluation'][:300]}...\n" if len(record['evaluation']) > 300 else f"裁判评判：{record['evaluation']}\n"
+                history_summary += "\n"
+        
         # 根据是否有对方观点构建不同的提示
         if opponent_view:
             # 后续轮次：有对方观点，需要反驳
-            prompt = f"【辩论主题】{topic}\n\n【{cfg['opponent']}的观点】\n{opponent_view}\n"
+            prompt = f"【辩论主题】{topic}\n"
+            if history_summary:
+                prompt += history_summary
+            prompt += f"\n【{cfg['opponent']}的最新观点】\n{opponent_view}\n"
             if judge_feedback:
                 prompt += f"\n【裁判C的评判和建议】\n{judge_feedback}\n"
             prompt += f"""
 你是{cfg['position']}，请按以下格式回复：
 1. 【我的立场】：明确表态{cfg['action']}辩题主张
 2. 【核心论据】：2-3个有力论据
-3. 【反驳对方】：针对{cfg['opponent']}观点的直接反驳"""
+3. 【精准反驳】：**必须引用对方的原话**，然后逐一反驳。格式如下：
+   - 「对方说：'...'」→ 这个观点的问题是...
+   - 针对对方的「...论点」，我认为...
+4. 【回应历史】：如果之前轮次有未回应的质疑，在此回应"""
             if judge_feedback:
-                prompt += f"\n4. 【回应裁判】：针对裁判反馈的回应"
+                prompt += f"\n5. 【回应裁判】：针对裁判指出的问题逐一回应"
         else:
             # 第一轮发言：陈述立场和论据，无需反驳
             prompt = f"""【辩论主题】{topic}
