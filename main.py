@@ -158,17 +158,17 @@ def main():
                     # 用户指定了输出路径
                     output_file = export_debate_result(result, args.output)
                 else:
-                    # 默认导出为txt文件，文件名使用完整主题
+                    # 默认导出为txt文件，文件名使用完整主题+日期
                     from datetime import datetime
                     import re
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    date_str = datetime.now().strftime("%Y%m%d")
                     # 清理主题中的特殊字符，保留完整主题作为文件名
                     topic_clean = re.sub(r'[\\/*?:"<>|]', '', args.topic)  # 移除文件名非法字符
                     topic_clean = topic_clean.replace(" ", "_")  # 空格替换为下划线
-                    # 如果主题太长（超过50字符），截取并添加省略标记
+                    # 如果主题太长（超过50字符），截取
                     if len(topic_clean) > 50:
                         topic_clean = topic_clean[:50]
-                    default_output = f"debate_{topic_clean}_{timestamp}.txt"
+                    default_output = f"debate_{topic_clean}_{date_str}.txt"
                     output_file = export_debate_result(result, default_output, format="text")
                 print(f"📄 结果已导出到: {output_file}")
             except Exception as e:
