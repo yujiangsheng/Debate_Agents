@@ -197,14 +197,28 @@ class DebateAgent(BaseAgent):
         
         # 根据是否有对方观点构建不同的提示
         if opponent_view:
-            # 后续轮次：有对方观点，需要反驳
+            # 有对方观点，需要反驳
             prompt = f"【辩论主题】{topic}\n"
             if history_summary:
                 prompt += history_summary
             prompt += f"\n【{cfg['opponent']}的最新观点】\n{opponent_view}\n"
             if judge_feedback:
                 prompt += f"\n【裁判C的评判和建议】\n{judge_feedback}\n"
-            prompt += f"""
+            
+            # 判断是否是本智能体的首次发言（有对方观点但无历史记录 = B的首轮）
+            is_my_first_speech = not debate_history
+            
+            if is_my_first_speech:
+                # B的首轮发言：有A的观点需要反驳，但这是B的首次发言
+                prompt += f"""
+你是{cfg['position']}，这是你的首次发言，请按以下格式回复：
+1. 【我的立场】：明确表态{cfg['action']}辩题主张
+2. 【核心论据】：2-3个{cfg['action']}辩题的有力论据
+3. 【精准反驳】：**必须引用对方的原话**，然后反驳。格式如下：
+   - 「对方说：'...'」→ 这个观点的问题是..."""
+            else:
+                # 后续轮次：需要提出新论据，不能重复
+                prompt += f"""
 你是{cfg['position']}，请按以下格式回复：
 1. 【我的立场】：一句话表态{cfg['action']}（简短即可）
 2. 【新论据】：提出1-2个**之前未提过的**新论据或新角度（查看历史记录，不要重复！）
@@ -216,7 +230,7 @@ class DebateAgent(BaseAgent):
             if judge_feedback:
                 prompt += f"\n5. 【回应裁判】：针对裁判指出的问题逐一回应"
         else:
-            # 第一轮发言：陈述立场和论据，无需反驳
+            # A的首轮发言：陈述立场和论据，无需反驳
             prompt = f"""【辩论主题】{topic}
 
 你是{cfg['position']}，这是你的首次发言，请按以下格式回复：
