@@ -124,17 +124,22 @@ class DebateAgent(BaseAgent):
 【辩论原则】
 1. 坚定{cfg["position"]}：你必须坚持{cfg["position"]}立场，{cfg["action"]}辩题中的主张
 2. 聚焦主题：所有论述必须紧扣原始问题，不要偏离话题
-3. 精确引用：反驳对方时，必须【直接引用】对方的原话或核心观点，然后逐一反驳
-4. 针锋相对：针对对方的【具体论据】进行反驳，指出其逻辑漏洞或事实错误
-5. 有限让步：可以承认对方某些细节合理，但绝不动摇核心立场
-6. 回应裁判：如果有裁判反馈，必须针对裁判指出的问题逐一回应
-7. 【禁止重复】：**绝对不要重复**你之前已经表达过的观点或论据！每轮发言必须提出**新的**论据、新的角度、新的反驳点
+3. 针锋相对：针对对方的【原创观点】进行反驳，指出其逻辑漏洞或事实错误
+4. 有限让步：可以承认对方某些细节合理，但绝不动摇核心立场
+5. 回应裁判：如果有裁判反馈，必须针对裁判指出的问题逐一回应
+6. 【禁止重复】：**绝对不要重复**你之前已经表达过的观点或论据！
 
-【⚠️ 关键区分：对方的"原创观点" vs "引用你的话"】
-当对方说「针对正方/反方的'xxx'」或「对方说：'xxx'」时，这是对方在**引用你之前说的话**来反驳你！
-- 对方引用的内容 = 你之前说过的话（不是对方的观点）
-- 对方在引用之后的评论/反驳 = 对方的真正观点（这才是你要反驳的）
-请务必区分清楚，不要把对方引用你的话当成对方的观点！
+【⚠️⚠️⚠️ 最重要：区分"我的观点" vs "对方的观点"】
+在历史记录中：
+- 标注【我方】的内容 = 你自己之前说过的话
+- 标注【对方】的内容 = 对方说的话
+
+当对方说「对方说：'xxx'」或引用某句话时：
+- 被引用的'xxx' = 很可能是你自己之前说过的话（去历史记录里确认！）
+- 对方在引用之后的评论/批评 = 对方的原创观点（这才是你要反驳的）
+
+⛔ 绝对禁止：把自己说过的话当成对方的观点来反驳！
+✅ 正确做法：先在历史记录【我方】部分确认，如果是自己说的，就不要反驳它，而是反驳对方对它的批评
 
 【论据一致性要求】
 你的每一个论据都必须**直接支持**你的{cfg["position"]}立场：
@@ -178,24 +183,37 @@ class DebateAgent(BaseAgent):
             if self.rag_tool:
                 context += self.retrieve(topic)
         
-        # 构建辩论历史摘要
+        # 构建辩论历史摘要，明确标注我方和对方的观点
         history_summary = ""
+        my_previous_points = []  # 收集我方之前的核心观点
         if debate_history:
             my_key = 'agent_a' if self.stance == 'pro' else 'agent_b'
-            my_label = '我方(正方)' if self.stance == 'pro' else '我方(反方)'
+            my_label = '【我方】' if self.stance == 'pro' else '【我方】'
             opp_key = 'agent_b' if self.stance == 'pro' else 'agent_a'
-            opp_label = '对方(反方)' if self.stance == 'pro' else '对方(正方)'
+            opp_label = '【对方】'
             
-            history_summary = "\n【历史辩论记录 - 请勿重复已表达的观点！】\n"
+            history_summary = "\n" + "=" * 50 + "\n"
+            history_summary += "📜 历史辩论记录（请仔细区分我方vs对方观点！）\n"
+            history_summary += "=" * 50 + "\n"
+            
             for record in debate_history:
-                history_summary += f"--- 第 {record['round']} 轮 ---\n"
+                history_summary += f"\n--- 第 {record['round']} 轮 ---\n"
                 my_view = record[my_key]
                 opp_view = record[opp_key]
-                history_summary += f"{my_label}已表达：{my_view[:400]}...\n" if len(my_view) > 400 else f"{my_label}已表达：{my_view}\n"
-                history_summary += f"{opp_label}观点：{opp_view[:400]}...\n" if len(opp_view) > 400 else f"{opp_label}观点：{opp_view}\n"
-                if record.get('evaluation'):
-                    history_summary += f"裁判评判：{record['evaluation'][:300]}...\n" if len(record['evaluation']) > 300 else f"裁判评判：{record['evaluation']}\n"
-                history_summary += "\n"
+                
+                # 收集我方观点摘要
+                my_previous_points.append(my_view[:200])
+                
+                history_summary += f"\n{my_label}（这是你自己说的！）：\n{my_view[:350]}...\n" if len(my_view) > 350 else f"\n{my_label}（这是你自己说的！）：\n{my_view}\n"
+                history_summary += f"\n{opp_label}（这是对方说的）：\n{opp_view[:350]}...\n" if len(opp_view) > 350 else f"\n{opp_label}（这是对方说的）：\n{opp_view}\n"
+            
+            history_summary += "\n" + "=" * 50 + "\n"
+            
+            # 添加我方观点摘要提醒
+            history_summary += "\n⚠️ 你之前说过的核心观点（不要误认为是对方的观点！）：\n"
+            for i, point in enumerate(my_previous_points, 1):
+                history_summary += f"  {i}. {point[:150]}...\n"
+            history_summary += "\n"
         
         # 根据是否有对方观点构建不同的提示
         if opponent_view:
@@ -205,9 +223,20 @@ class DebateAgent(BaseAgent):
                 prompt += history_summary
             prompt += f"\n【{cfg['opponent']}的最新发言】\n{opponent_view}\n"
             prompt += f"""
-⚠️ 阅读提示：上方是{cfg['opponent']}的发言。注意区分：
-- 当{cfg['opponent']}说「针对{cfg['position']}的'xxx'」时，'xxx'是你之前说的话（不是对方观点）
-- {cfg['opponent']}在引用之后的评论才是对方的真正观点（这才是你要反驳的）
+╔══════════════════════════════════════════════════════════╗
+║  ⚠️ 极其重要：如何正确识别"对方的原创观点"              ║
+╠══════════════════════════════════════════════════════════╣
+║  当对方说「对方说：'xxx'」或「针对{cfg['position']}的'xxx'」时：    ║
+║  → 'xxx' 是【你自己之前说的话】，不是对方的观点！        ║
+║  → 对方在引用之后的反驳/评论才是【对方的原创观点】       ║
+║                                                          ║
+║  例如，如果对方说：                                      ║
+║  「对方说：'技术会进步'」→ 这个观点忽视了物理限制...    ║
+║                                                          ║
+║  那么：                                                  ║
+║  ✗ '技术会进步' = 你自己说的（不要反驳自己！）          ║
+║  ✓ '忽视了物理限制' = 对方的原创观点（这才要反驳）      ║
+╚══════════════════════════════════════════════════════════╝
 """
             if judge_feedback:
                 prompt += f"\n【裁判C的评判和建议】\n{judge_feedback}\n"
@@ -222,22 +251,24 @@ class DebateAgent(BaseAgent):
 1. 【我的立场】：明确表态{cfg['action']}辩题主张（一句话）
 2. 【核心论据】：2-3个{cfg['action']}辩题的有力论据
    ⚠️ 检查：每个论据是否真的支持"{cfg['action']}"？不支持就删掉换一个
-3. 【反驳对方】：找出对方的原创观点（不是对方引用你的话），然后反驳：
-   - 对方的原创观点是：「...」
+3. 【反驳对方的原创观点】：
+   ⚠️ 先检查：你要反驳的内容，是不是你自己之前说的？如果是，那就不要反驳！
+   - 对方的原创观点（不是引用我的话）：「...」
    - 我的反驳：..."""
             else:
                 # 后续轮次：需要提出新论据，不能重复
                 prompt += f"""
 你是{cfg['position']}，请按以下格式回复：
 1. 【我的立场】：一句话表态{cfg['action']}
-2. 【新论据】：1-2个**之前未提过的**新论据（检查历史记录，不要重复！）
-   ⚠️ 检查：每个论据是否真的支持"{cfg['action']}"？不支持就删掉换一个
-3. 【反驳对方】：找出对方的原创观点（不是对方引用你的话），然后反驳：
-   - 对方的原创观点是：「...」
+2. 【新论据】：1-2个**之前未提过的**新论据
+   ⚠️ 检查历史记录中【我方】的发言，确保不重复！
+3. 【反驳对方的原创观点】：
+   ⚠️ 先检查：你要反驳的内容，是不是你自己之前说的？如果是，那就不要反驳！
+   - 对方的原创观点（不是引用我的话）：「...」
    - 我的反驳：...
-4. 【回应对方质疑】：对方反驳了你的哪些观点？逐一回应
+4. 【回应对方对我的质疑】：对方批评了我的哪些观点？我如何回应？
 
-⚠️ 重要：确保你的论据是**全新的**且**支持{cfg['action']}**！"""
+⚠️ 再次提醒：上方历史记录中标注【我方】的内容是你自己说的，不要误认为是对方的观点！"""
             if judge_feedback:
                 prompt += f"\n5. 【回应裁判】：针对裁判指出的问题逐一回应"
         else:
