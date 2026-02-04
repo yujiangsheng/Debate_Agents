@@ -104,7 +104,13 @@ def main():
     parser.add_argument(
         "-o", "--output",
         type=str, default=None,
-        help="结果导出文件路径 (.json 或 .md)"
+        help="结果导出文件路径 (.json/.md/.txt)，默认自动导出为txt"
+    )
+    
+    parser.add_argument(
+        "--no-export",
+        action="store_true",
+        help="禁用自动导出辩论结果"
     )
     
     args = parser.parse_args()
@@ -145,11 +151,20 @@ def main():
         )
         print(f"\n✓ 辩论完成，共 {result['rounds']} 轮")
         
-        # 导出结果到文件（如果指定）
-        if args.output:
+        # 导出结果到文件
+        if not args.no_export:
             try:
-                export_debate_result(result, args.output)
-                print(f"📄 结果已导出到: {args.output}")
+                if args.output:
+                    # 用户指定了输出路径
+                    output_file = export_debate_result(result, args.output)
+                else:
+                    # 默认导出为txt文件
+                    from datetime import datetime
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    topic_short = args.topic[:15].replace(" ", "_").replace("/", "_")
+                    default_output = f"debate_{topic_short}_{timestamp}.txt"
+                    output_file = export_debate_result(result, default_output, format="text")
+                print(f"📄 结果已导出到: {output_file}")
             except Exception as e:
                 print(f"⚠ 导出失败: {e}")
     else:
