@@ -12,6 +12,7 @@
 - 单例模式: 全局只有一个模型实例
 - 设备自适应: 自动选择 CUDA/MPS/CPU
 - 对话模板: 自动应用模型的聊天模板
+- 错误处理: 优雅的加载失败处理
 
 使用示例
 --------
@@ -29,9 +30,10 @@
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 from config import MODEL_NAME, get_device, GENERATION_CONFIG
+from exceptions import ModelLoadError
 
 
 class QwenModel:
@@ -97,35 +99,44 @@ class QwenModel:
         - CUDA: 使用 float16 精度 + 自动显存分配
         - MPS (Apple Silicon): 使用 float32 避免数值不稳定
         - CPU: 使用 float32，作为兜底方案
+        
+        Raises
+        ------
+        ModelLoadError
+            模型加载失败时抛出
         """
         print(f"正在加载模型: {MODEL_NAME}")
         
-        # 选择计算设备
-        QwenModel._device = get_device()
-        
-        # 加载分词器
-        QwenModel._tokenizer = AutoTokenizer.from_pretrained(
-            MODEL_NAME,
-            trust_remote_code=True
-        )
-        
-        # 根据设备选择数据类型 (MPS用float32避免数值问题)
-        dtype = torch.float16 if QwenModel._device.type == "cuda" else torch.float32
-        
-        # 加载模型
-        QwenModel._model = AutoModelForCausalLM.from_pretrained(
-            MODEL_NAME,
-            torch_dtype=dtype,
-            device_map="auto" if QwenModel._device.type == "cuda" else None,
-            trust_remote_code=True
-        )
-        
-        # 非CUDA设备需要手动移动模型到设备
-        if QwenModel._device.type != "cuda":
-            QwenModel._model = QwenModel._model.to(QwenModel._device)
-        
-        QwenModel._model.eval()  # 设置为评估模式，禁用 dropout
-        print("✓ 模型加载成功!")
+        try:
+            # 选择计算设备
+            QwenModel._device = get_device()
+            
+            # 加载分词器
+            QwenModel._tokenizer = AutoTokenizer.from_pretrained(
+                MODEL_NAME,
+                trust_remote_code=True
+            )
+            
+            # 根据设备选择数据类型 (MPS用float32避免数值问题)
+            dtype = torch.float16 if QwenModel._device.type == "cuda" else torch.float32
+            
+            # 加载模型
+            QwenModel._model = AutoModelForCausalLM.from_pretrained(
+                MODEL_NAME,
+                torch_dtype=dtype,
+                device_map="auto" if QwenModel._device.type == "cuda" else None,
+                trust_remote_code=True
+            )
+            
+            # 非CUDA设备需要手动移动模型到设备
+            if QwenModel._device.type != "cuda":
+                QwenModel._model = QwenModel._model.to(QwenModel._device)
+            
+            QwenModel._model.eval()  # 设置为评估模式，禁用 dropout
+            print("✓ 模型加载成功!")
+            
+        except Exception as e:
+            raise ModelLoadError(f"模型加载失败: {e}") from e
     
     def generate(self, messages: List[Dict[str, str]], **kwargs) -> str:
         """

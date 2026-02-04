@@ -30,9 +30,11 @@
 
 import argparse
 import sys
+from pathlib import Path
 
 from debate_system import DebateSystem
 from config import MAX_DEBATE_ROUNDS
+from utils import load_knowledge_file, export_debate_result
 
 
 def main():
@@ -99,6 +101,12 @@ def main():
         help="知识库文件路径 (用于RAG)"
     )
     
+    parser.add_argument(
+        "-o", "--output",
+        type=str, default=None,
+        help="结果导出文件路径 (.json 或 .md)"
+    )
+    
     args = parser.parse_args()
     
     # =========================================================================
@@ -120,10 +128,7 @@ def main():
     # 如果指定了知识库文件，将其分块后加入RAG检索系统
     if args.knowledge_file:
         try:
-            with open(args.knowledge_file, 'r', encoding='utf-8') as f:
-                content = f.read()
-            # 将文档切分为500字符的块，便于向量检索
-            chunks = [content[i:i+500] for i in range(0, len(content), 500)]
+            chunks = load_knowledge_file(args.knowledge_file)
             system.add_knowledge(chunks)
         except Exception as e:
             print(f"⚠ 加载知识库失败: {e}")
@@ -139,6 +144,14 @@ def main():
             early_stop=not args.no_early_stop
         )
         print(f"\n✓ 辩论完成，共 {result['rounds']} 轮")
+        
+        # 导出结果到文件（如果指定）
+        if args.output:
+            try:
+                export_debate_result(result, args.output)
+                print(f"📄 结果已导出到: {args.output}")
+            except Exception as e:
+                print(f"⚠ 导出失败: {e}")
     else:
         system.interactive_mode()
 

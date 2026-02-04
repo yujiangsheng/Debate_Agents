@@ -14,7 +14,7 @@
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 from model_loader import QwenModel
 from tools import SearchTool, RAGTool
@@ -67,8 +67,8 @@ class BaseAgent(ABC):
         self.history: List[Dict[str, str]] = []
         
         # 初始化工具 (根据参数决定是否启用)
-        self.search_tool = SearchTool() if use_search else None
-        self.rag_tool = RAGTool() if use_rag else None
+        self.search_tool: Optional[SearchTool] = SearchTool() if use_search else None
+        self.rag_tool: Optional[RAGTool] = RAGTool() if use_rag else None
         
         # 构建系统提示词 (由子类实现)
         self.system_prompt = self._build_system_prompt()

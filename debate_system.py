@@ -32,7 +32,7 @@
 >>> system.interactive_mode()
 """
 
-from typing import List, Dict
+from typing import List, Dict, Optional
 from rich.console import Console
 from rich.panel import Panel
 from rich.markdown import Markdown
@@ -40,6 +40,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from agents import DebateAgentA, DebateAgentB, JudgeAgent
 from config import MAX_DEBATE_ROUNDS, CONSENSUS_THRESHOLD
+from exceptions import DebateSystemError, AgentError
 
 
 class DebateSystem:

@@ -99,6 +99,7 @@ python main.py -t "2024年科技趋势" --use-tools
 | `--no-rag` | | 禁用RAG知识库 | 否 |
 | `--no-early-stop` | | 禁用共识后提前结束 | 否 |
 | `--knowledge-file` | `-k` | 知识库文件路径 | 无 |
+| `--output` | `-o` | 结果导出路径 (.json/.md) | 无 |
 
 ### 使用场景示例
 
@@ -117,6 +118,12 @@ python main.py -t "公司战略规划" -k ./knowledge.txt
 
 # 场景5: 禁用提前结束，完整辩论
 python main.py -t "教育改革方向" --no-early-stop
+
+# 场景6: 导出结果到JSON文件
+python main.py -t "人工智能伦理" -o result.json
+
+# 场景7: 导出结果到Markdown文件
+python main.py -t "远程办公利弊" -o debate_report.md
 ```
 
 ### Python API 调用
@@ -151,6 +158,8 @@ Debate_Agents/
 ├── debate_system.py     # 辩论系统 - 核心调度
 ├── model_loader.py      # 模型加载器 - 单例模式
 ├── config.py            # 全局配置 - 参数设置
+├── exceptions.py        # 异常定义 - 错误处理
+├── utils.py             # 工具函数 - 导出/文本处理
 ├── requirements.txt     # 依赖列表
 ├── README.md            # 说明文档
 │
@@ -173,13 +182,35 @@ Debate_Agents/
 | `main.py` | 命令行入口，参数解析 |
 | `debate_system.py` | 辩论流程调度，控制多轮辩论 |
 | `model_loader.py` | Qwen 模型封装，单例模式 |
-| `config.py` | 全局配置，可调整参数 |
+| `config.py` | 全局配置，支持环境变量 |
+| `exceptions.py` | 自定义异常类 |
+| `utils.py` | 结果导出、文本处理工具 |
 | `agents/` | 智能体实现 (正方/反方/裁判) |
 | `tools/` | 外部工具 (搜索/RAG) |
 
 ---
 
 ## ⚙️ 配置说明
+
+### 环境变量配置
+
+支持通过环境变量覆盖默认配置：
+
+```bash
+# 模型配置
+export DEBATE_MODEL_NAME="Qwen/Qwen2.5-7B-Instruct"
+
+# 生成参数
+export DEBATE_MAX_TOKENS="1024"
+export DEBATE_TEMPERATURE="0.7"
+export DEBATE_TOP_P="0.9"
+
+# 辩论参数
+export DEBATE_MAX_ROUNDS="5"
+export DEBATE_CONSENSUS_THRESHOLD="0.8"
+```
+
+### 配置文件
 
 在 `config.py` 中可调整以下参数:
 

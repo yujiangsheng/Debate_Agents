@@ -11,6 +11,13 @@
 - 辩论参数：控制辩论的轮数和共识判定
 - 工具配置：RAG检索和搜索相关参数
 
+环境变量支持
+------------
+可通过环境变量覆盖默认配置：
+- DEBATE_MODEL_NAME: 模型名称
+- DEBATE_MAX_ROUNDS: 最大辩论轮数
+- DEBATE_TEMPERATURE: 生成温度
+
 使用示例
 --------
 >>> from config import MODEL_NAME, MAX_DEBATE_ROUNDS
@@ -18,14 +25,16 @@
 >>> print(f"最大轮数: {MAX_DEBATE_ROUNDS}")
 """
 
+import os
+from typing import Dict, Any
 import torch
 
 # =============================================================================
 # 模型配置
 # =============================================================================
 # 指定使用的大语言模型，支持 HuggingFace 模型ID或本地路径
-# 推荐使用 Qwen2.5-7B-Instruct，平衡性能与资源消耗
-MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct"
+# 可通过环境变量 DEBATE_MODEL_NAME 覆盖
+MODEL_NAME = os.getenv("DEBATE_MODEL_NAME", "Qwen/Qwen2.5-7B-Instruct")
 
 
 def get_device() -> torch.device:
@@ -61,19 +70,20 @@ def get_device() -> torch.device:
 # 模型生成参数
 # =============================================================================
 # 控制大语言模型生成文本的行为
-GENERATION_CONFIG = {
-    "max_new_tokens": 1024,      # 最大生成token数，控制回复长度
-    "temperature": 0.7,          # 温度参数，越高越随机(0.1-1.0)
-    "top_p": 0.9,                # 核采样参数，保留累积概率前90%的token
-    "do_sample": True,           # 是否使用采样(False则使用贪婪解码)
-    "repetition_penalty": 1.1,   # 重复惩罚，防止模型重复输出
+# 可通过环境变量覆盖部分参数
+GENERATION_CONFIG: Dict[str, Any] = {
+    "max_new_tokens": int(os.getenv("DEBATE_MAX_TOKENS", "1024")),
+    "temperature": float(os.getenv("DEBATE_TEMPERATURE", "0.7")),
+    "top_p": float(os.getenv("DEBATE_TOP_P", "0.9")),
+    "do_sample": True,
+    "repetition_penalty": 1.1,
 }
 
 # =============================================================================
 # 辩论系统参数
 # =============================================================================
-MAX_DEBATE_ROUNDS = 5       # 最大辩论轮数，超过此轮数强制结束
-CONSENSUS_THRESHOLD = 0.8   # 共识阈值(0-1)，达到此值判定为达成共识并提前结束
+MAX_DEBATE_ROUNDS = int(os.getenv("DEBATE_MAX_ROUNDS", "5"))
+CONSENSUS_THRESHOLD = float(os.getenv("DEBATE_CONSENSUS_THRESHOLD", "0.8"))
 
 # =============================================================================
 # RAG (检索增强生成) 配置
