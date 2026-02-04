@@ -128,11 +128,17 @@ class DebateAgent(BaseAgent):
 4. 针锋相对：针对对方的【具体论据】进行反驳，指出其逻辑漏洞或事实错误
 5. 有限让步：可以承认对方某些细节合理，但绝不动摇核心立场
 6. 回应裁判：如果有裁判反馈，必须针对裁判指出的问题逐一回应
+7. 【禁止重复】：**绝对不要重复**你之前已经表达过的观点或论据！每轮发言必须提出**新的**论据、新的角度、新的反驳点
 
 【引用格式要求】
 反驳时必须使用类似格式：
 - 「对方说：'xxx'」→ 我的反驳是...
 - 针对对方提出的「xxx论点」，我认为...
+
+【重要提醒】
+- 历史记录中你已说过的论据，不要再重复
+- 每轮必须有新观点、新论据、新反驳角度
+- 宁可深入某个新角度，也不要泛泛重复旧论据
 
 请用中文回答，语言犀利有力，坚定捍卫{cfg["position"]}立场！"""
     
@@ -173,11 +179,18 @@ class DebateAgent(BaseAgent):
         # 构建辩论历史摘要
         history_summary = ""
         if debate_history:
-            history_summary = "\n【历史辩论记录】\n"
+            my_key = 'agent_a' if self.stance == 'pro' else 'agent_b'
+            my_label = '我方(正方)' if self.stance == 'pro' else '我方(反方)'
+            opp_key = 'agent_b' if self.stance == 'pro' else 'agent_a'
+            opp_label = '对方(反方)' if self.stance == 'pro' else '对方(正方)'
+            
+            history_summary = "\n【历史辩论记录 - 请勿重复已表达的观点！】\n"
             for record in debate_history:
                 history_summary += f"--- 第 {record['round']} 轮 ---\n"
-                history_summary += f"正方观点：{record['agent_a'][:500]}...\n" if len(record['agent_a']) > 500 else f"正方观点：{record['agent_a']}\n"
-                history_summary += f"反方观点：{record['agent_b'][:500]}...\n" if len(record['agent_b']) > 500 else f"反方观点：{record['agent_b']}\n"
+                my_view = record[my_key]
+                opp_view = record[opp_key]
+                history_summary += f"{my_label}已表达：{my_view[:400]}...\n" if len(my_view) > 400 else f"{my_label}已表达：{my_view}\n"
+                history_summary += f"{opp_label}观点：{opp_view[:400]}...\n" if len(opp_view) > 400 else f"{opp_label}观点：{opp_view}\n"
                 if record.get('evaluation'):
                     history_summary += f"裁判评判：{record['evaluation'][:300]}...\n" if len(record['evaluation']) > 300 else f"裁判评判：{record['evaluation']}\n"
                 history_summary += "\n"
@@ -193,12 +206,13 @@ class DebateAgent(BaseAgent):
                 prompt += f"\n【裁判C的评判和建议】\n{judge_feedback}\n"
             prompt += f"""
 你是{cfg['position']}，请按以下格式回复：
-1. 【我的立场】：明确表态{cfg['action']}辩题主张
-2. 【核心论据】：2-3个有力论据
-3. 【精准反驳】：**必须引用对方的原话**，然后逐一反驳。格式如下：
+1. 【我的立场】：一句话表态{cfg['action']}（简短即可）
+2. 【新论据】：提出1-2个**之前未提过的**新论据或新角度（查看历史记录，不要重复！）
+3. 【精准反驳】：**必须引用对方的原话**，然后反驳。格式如下：
    - 「对方说：'...'」→ 这个观点的问题是...
-   - 针对对方的「...论点」，我认为...
-4. 【回应历史】：如果之前轮次有未回应的质疑，在此回应"""
+4. 【回应遗留问题】：回应之前轮次对方提出但你未回应的质疑
+
+⚠️ 重要：查看上方【历史辩论记录】，确保你的论据是**全新的**，不要重复已说过的观点！"""
             if judge_feedback:
                 prompt += f"\n5. 【回应裁判】：针对裁判指出的问题逐一回应"
         else:
