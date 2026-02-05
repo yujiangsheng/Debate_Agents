@@ -1,321 +1,252 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-辩论智能体 - 正方A和反方B
-=========================
-
-本模块实现辩论系统中的两个辩论智能体：
-- DebateAgentA: 正方，支持辩题主张
-- DebateAgentB: 反方，反对辩题主张
-
-通过 DebateAgent 基类和 stance 参数实现代码复用，
-两个具体类只是对立场的简单封装。
-
-使用示例
---------
->>> from agents import DebateAgentA, DebateAgentB
->>> agent_a = DebateAgentA()
->>> agent_b = DebateAgentB()
->>> 
->>> # 第一轮发言 (无对方观点)
->>> view_a = agent_a.debate("人工智能是否会取代人类工作")
->>> 
->>> # 后续轮次 (有对方观点，需反驳)
->>> view_b = agent_b.debate("人工智能是否会取代人类工作", opponent_view=view_a)
-"""
-
+"""辩论智能体 - 正方A和反方B"""
+import re
+import json
 from typing import Optional, List, Dict
 from .base_agent import BaseAgent
 
 
 class DebateAgent(BaseAgent):
-    """
-    辩论智能体基类
+    """辩论智能体基类，通过stance参数控制正/反方立场"""
     
-    通过 stance 参数控制正方/反方立场，实现代码复用。
-    正方和反方共享相同的辩论逻辑，只有立场和提示词不同。
-    
-    Attributes
-    ----------
-    stance : str
-        立场标识，"pro" 表示正方，"con" 表示反方
-    config : dict
-        当前立场的配置信息
-        
-    Class Attributes
-    ----------------
-    STANCES : dict
-        立场配置字典，包含正方和反方的所有配置
-    """
-    
-    # =========================================================================
-    # 立场配置 - 定义正方和反方的差异化设置
-    # =========================================================================
     STANCES = {
         "pro": {
-            "name": "智能体A",
-            "role": "辩论者A - 正方",
-            "position": "正方",
-            "opponent": "反方",
-            "action": "支持",
-            "search_keywords": "优势 好处 支持",
-            "examples": [
-                '辩题"是否应该堕胎" → 你支持堕胎权',
-                '辩题"AI是否会取代人类" → 你认为会取代',
-                '辩题"应该禁止吸烟吗" → 你支持禁止'
-            ]
+            "name": "智能体A", "role": "辩论者A - 正方", "position": "正方",
+            "opponent": "反方", "action": "支持", "search_keywords": "优势 好处 支持",
+            "examples": ['辩题"是否应该堕胎" → 你支持堕胎权', '辩题"AI是否会取代人类" → 你认为会取代']
         },
         "con": {
-            "name": "智能体B",
-            "role": "辩论者B - 反方",
-            "position": "反方",
-            "opponent": "正方",
-            "action": "反对",
-            "search_keywords": "风险 问题 反对",
-            "examples": [
-                '辩题"是否应该堕胎" → 你反对堕胎权',
-                '辩题"AI是否会取代人类" → 你认为不会取代',
-                '辩题"应该禁止吸烟吗" → 你反对禁止'
-            ]
+            "name": "智能体B", "role": "辩论者B - 反方", "position": "反方",
+            "opponent": "正方", "action": "反对", "search_keywords": "风险 问题 反对",
+            "examples": ['辩题"是否应该堕胎" → 你反对堕胎权', '辩题"AI是否会取代人类" → 你认为不会取代']
         }
     }
     
     def __init__(self, stance: str = "pro", use_search: bool = True, use_rag: bool = True):
-        """
-        初始化辩论智能体
-        
-        Parameters
-        ----------
-        stance : str, optional
-            立场选择 (默认: "pro")
-            - "pro": 正方，支持辩题主张
-            - "con": 反方，反对辩题主张
-        use_search : bool, optional
-            是否启用网络搜索 (默认: True)
-        use_rag : bool, optional
-            是否启用 RAG 知识库 (默认: True)
-        """
         self.stance = stance
         self.config = self.STANCES[stance]
-        super().__init__(
-            name=self.config["name"],
-            role=self.config["role"],
-            use_search=use_search,
-            use_rag=use_rag
-        )
+        super().__init__(name=self.config["name"], role=self.config["role"], 
+                         use_search=use_search, use_rag=use_rag)
     
     def _build_system_prompt(self) -> str:
-        """
-        构建系统提示词
-        
-        根据立场配置生成对应的角色提示词，
-        明确智能体的立场、辩论原则和输出格式。
-        """
         cfg = self.config
         examples = "\n".join(f"- {e}" for e in cfg["examples"])
-        
+        opposite_action = "反对" if cfg["action"] == "支持" else "支持"
         return f"""你是辩论智能体，担任本次辩论的【{cfg["position"]}】立场。
 
 【核心身份】
-你是{cfg["position"]}辩手，必须{cfg["action"]}辩题中的主张。无论辩题是什么，你都要从{cfg["action"]}的角度进行论证。
+你是{cfg["position"]}辩手，必须{cfg["action"]}辩题中的主张。
 例如：
 {examples}
 
 【辩论原则】
-1. 坚定{cfg["position"]}：你必须坚持{cfg["position"]}立场，{cfg["action"]}辩题中的主张
-2. 聚焦主题：所有论述必须紧扣原始问题，不要偏离话题
-3. 针锋相对：针对对方的【原创观点】进行反驳，指出其逻辑漏洞或事实错误
-4. 有限让步：可以承认对方某些细节合理，但绝不动摇核心立场
-5. 回应裁判：如果有裁判反馈，必须针对裁判指出的问题逐一回应
-6. 【禁止重复】：**绝对不要重复**你之前已经表达过的观点或论据！
+1. 坚定{cfg["position"]}：必须坚持{cfg["position"]}立场，{cfg["action"]}辩题主张
+2. 聚焦主题：所有论述必须紧扣原始问题
+3. 针锋相对：针对🔴对方的观点进行反驳
+4. 【禁止重复】：绝对不要重复你之前已经表达过的观点！
 
-【⚠️⚠️⚠️ 最重要：区分"我的观点" vs "对方的观点"】
-在历史记录中：
-- 标注【我方】的内容 = 你自己之前说过的话
-- 标注【对方】的内容 = 对方说的话
+【⚠️⚠️⚠️ 最最重要：不要帮对方说话！】
+┌────────────────────────────────────────────────────────┐
+│  你是{cfg["position"]}，你的目标是{cfg["action"]}辩题主张！            │
+│  你的对手是{cfg["opponent"]}，他的目标是{opposite_action}辩题主张！      │
+│                                                        │
+│  ✅ 正确：你的每一句话、每个论据、每次反驳，          │
+│     结论都必须是「所以应该{cfg["action"]}辩题」              │
+│                                                        │
+│  ❌ 错误：说着说着就认同对方观点，或得出                │
+│     「所以应该{opposite_action}辩题」的结论                    │
+│                                                        │
+│  ⛔ 绝对禁止：在反驳中得出支持对方立场的结论！       │
+└────────────────────────────────────────────────────────┘
 
-当对方说「对方说：'xxx'」或引用某句话时：
-- 被引用的'xxx' = 很可能是你自己之前说过的话（去历史记录里确认！）
-- 对方在引用之后的评论/批评 = 对方的原创观点（这才是你要反驳的）
+【区分我方vs对方的观点】
+🟢【我方】= 你自己之前说过的话 → 要辩护不能反驳！
+🔴【对方】= 对方说的话 → 这才是你要反驳的！
 
-⛔ 绝对禁止：把自己说过的话当成对方的观点来反驳！
-✅ 正确做法：先在历史记录【我方】部分确认，如果是自己说的，就不要反驳它，而是反驳对方对它的批评
-
-【论据一致性要求】
-你的每一个论据都必须**直接支持**你的{cfg["position"]}立场：
-- 你是{cfg["position"]}，必须{cfg["action"]}辩题主张
-- 检查：你举的例子、数据、推理是否真的支持{cfg["action"]}？
-- 如果论据反而支持对方立场，立即删除并换一个
-
-请用中文回答，语言犀利有力，坚定捍卫{cfg["position"]}立场！"""
+请用中文回答，语言犀利有力，坚定捍卫你的{cfg["position"]}立场！"""
     
     def debate(self, topic: str, opponent_view: Optional[str] = None,
                use_tools: bool = False, judge_feedback: Optional[str] = None,
-               debate_history: Optional[List[Dict]] = None) -> str:
-        """
-        进行辩论发言
-        
-        Parameters
-        ----------
-        topic : str
-            辩论主题
-        opponent_view : str, optional
-            对方的最新观点 (首轮发言时为 None)
-        use_tools : bool, optional
-            是否使用搜索/RAG工具获取信息 (默认: False)
-        judge_feedback : str, optional
-            裁判的评判和建议 (首轮发言时为 None)
-        debate_history : List[Dict], optional
-            完整的辩论历史记录，包含之前所有轮次的发言
-            
-        Returns
-        -------
-        str
-            生成的辩论发言内容
-        """
+               debate_history: Optional[List[Dict]] = None,
+               structured_history: Optional[str] = None) -> str:
+        """进行辩论发言"""
         cfg = self.config
         context = ""
         
-        # 使用工具获取外部信息作为论据支撑
         if use_tools:
             if self.search_tool:
                 context += self.search(f"{topic} {cfg['search_keywords']}")
             if self.rag_tool:
                 context += self.retrieve(topic)
         
-        # 构建辩论历史摘要，明确标注我方和对方的观点
+        # 构建历史摘要
         history_summary = ""
-        my_previous_points = []  # 收集我方之前的核心观点
+        if structured_history:
+            history_summary = f"\n{structured_history}\n"
+        elif debate_history:
+            history_summary = self._build_history_summary(debate_history)
+        
+        # 构建提示词
+        if opponent_view:
+            prompt = self._build_rebuttal_prompt(topic, opponent_view, history_summary, 
+                                                  judge_feedback, debate_history)
+        else:
+            prompt = self._build_opening_prompt(topic)
+        
+        response = self.generate(prompt, context)
+        response = self._verify_and_fix_consistency(topic, response, cfg, debate_history)
+        return response
+    
+    def _build_history_summary(self, debate_history: List[Dict]) -> str:
+        """构建辩论历史摘要"""
+        my_key = 'agent_a' if self.stance == 'pro' else 'agent_b'
+        opp_key = 'agent_b' if self.stance == 'pro' else 'agent_a'
+        my_name = '正方A' if self.stance == 'pro' else '反方B'
+        opp_name = '反方B' if self.stance == 'pro' else '正方A'
+        
+        summary = f"\n{'='*50}\n📜 辩论历史记录 | 你是【{my_name}】\n{'='*50}\n"
+        
+        for record in debate_history:
+            summary += f"\n第 {record['round']} 轮:\n"
+            summary += f"🟢【我方】：{record[my_key][:300]}...\n"
+            summary += f"🔴【对方】：{record[opp_key][:300]}...\n"
+        
+        return summary
+    
+    def _build_opening_prompt(self, topic: str) -> str:
+        """构建首轮发言提示"""
+        cfg = self.config
+        return f"""【辩论主题】{topic}
+
+你是{cfg['position']}，你的目标是{cfg['action']}辩题主张。首次发言请按以下格式：
+1. 【我的立场】：明确表态{cfg['action']}辩题主张
+2. 【核心论据】：2-3个支持{cfg['action']}的有力论据（每个论据的结论都必须指向{cfg['action']}）
+3. 【预判并反驳对方可能的论据】：
+   - 对方可能说：「...」
+   - 我的预先反驳：...（结论必须是「所以应该{cfg['action']}辩题」）
+
+⚠️ 重要：你的每一个论据、每一次反驳，结论都必须支持{cfg['action']}！"""
+    
+    def _build_rebuttal_prompt(self, topic: str, opponent_view: str, 
+                                history_summary: str, judge_feedback: str,
+                                debate_history: List[Dict]) -> str:
+        """构建反驳发言提示"""
+        cfg = self.config
+        is_my_first = not debate_history
+        
+        prompt = f"【辩论主题】{topic}\n{history_summary}"
+        prompt += f"\n🔴【对方最新发言】：\n{opponent_view}\n"
+        
+        if is_my_first:
+            prompt += f"""
+⚠️ 重要提示：对方发言包含两部分，要区别对待！
+┌─────────────────────────────────────────────────────────┐
+│  对方的「核心论据」= 对方真正的观点 → 这是你要反驳的！   │
+│  对方的「预判」= 对方猜测你会说的 → 这不是对方的观点！   │
+├─────────────────────────────────────────────────────────┤
+│  ⭐ 对于对方的预判，你应该默认接受它作为你的观点：       │
+│  ✅ 承认：「没错，我确实认为...」                       │
+│     → 然后给出有力论证，说明为什么这个观点是对的        │
+│     → 并说明这个观点如何支持你{cfg['action']}的立场       │
+│                                                         │
+│  ❌ 绝对禁止：把对方的预判当作对方的观点来反驳！        │
+│     → 预判是对方猜你会说的，不是对方自己的主张          │
+└─────────────────────────────────────────────────────────┘
+
+你是{cfg['position']}，首次发言请按以下格式：
+1. 【我的立场】：表态{cfg['action']}辩题主张
+2. 【核心论据】：2-3个支持{cfg['action']}的有力论据
+3. 【反驳对方核心论据】：针对对方的「核心论据」部分进行反驳（结论必须支持{cfg['action']}）
+4. 【回应对方的预判】：接受对方的预判作为你的观点，并论证它为何正确、为何支持你的立场
+   → 格式：「没错，我确实认为[对方预判的内容]，因为...，这恰恰说明应该{cfg['action']}辩题」
+
+⛔ 注意：你是辩论者，不是裁判！不要输出【犀利点评】【逻辑漏洞】【本轮胜负】等评判内容！"""
+        else:
+            opposite_action = "反对" if cfg['action'] == "支持" else "支持"
+            prompt += f"""
+你是{cfg['position']}，请按以下格式回复：
+1. 【我的立场】：一句话表态{cfg['action']}辩题主张
+2. 【新论据】：1-2个支持{cfg['action']}的新论据（之前未提过）
+3. 【反驳🔴对方观点】：
+   - 指出对方论据的问题
+   - ⚠️ 结论必须是「所以应该{cfg['action']}辩题」，不能得出{opposite_action}的结论！
+4. 【辩护🟢我方观点】：如果对方批评了我的观点，要辩护并强化{cfg['action']}的立场
+
+⛔ 注意：
+- 你是辩论者，不是裁判！不要输出【犀利点评】【逻辑漏洞】【本轮胜负】等评判内容！
+- 绝对禁止帮对方说话！你的每一句结论都必须支持{cfg['action']}辩题！"""
+        
+        if judge_feedback:
+            prompt += f"\n【裁判反馈】{judge_feedback}\n请针对裁判指出的问题回应。"
+        
+        return prompt
+    
+    def _clean_response(self, response: str) -> str:
+        """清理发言中的内部自检内容、裁判评判内容和元评论"""
+        # 移除JSON自检内容
+        cleaned = re.sub(r'\s*\{[^{}]*(?:一致|consistent)[^{}]*\}\s*', '', response, flags=re.DOTALL | re.IGNORECASE)
+        cleaned = re.sub(r'^\s*json\s*\n?|\n\s*json\s*(?=\n*【)', '', cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r'\s*[【\(]内部自检[^】\)]*[】\)][^\n]*\n?', '', cleaned)
+        
+        # 移除智能体错误输出的裁判评判内容
+        judge_patterns = ['裁判反馈', '犀利点评', '逻辑漏洞', '本轮胜负', '共识进展', '下轮要求']
+        for pattern in judge_patterns:
+            cleaned = re.sub(rf'\s*【{pattern}】[\s\S]*?(?=【|$)', '', cleaned)
+        
+        # 移除元评论
+        for pattern in [r'\n+这样修改后[^\n]*$', r'\n+以上[是为]?[^\n]*修改[^\n]*$',
+                        r'\n+希望[^\n]*能[^\n]*$', r'\n+请根据[^\n]*进行[^\n]*$']:
+            cleaned = re.sub(pattern, '', cleaned)
+        
+        # 移除多余的空行
+        return re.sub(r'\n{3,}', '\n\n', cleaned).strip()
+    
+    def _verify_and_fix_consistency(self, topic: str, response: str, cfg: dict, 
+                                     debate_history: list = None, max_retries: int = 2) -> str:
+        """验证论据与立场的一致性"""
+        my_previous = ""
+        opp_previous = ""
         if debate_history:
             my_key = 'agent_a' if self.stance == 'pro' else 'agent_b'
-            my_label = '【我方】' if self.stance == 'pro' else '【我方】'
             opp_key = 'agent_b' if self.stance == 'pro' else 'agent_a'
-            opp_label = '【对方】'
-            
-            history_summary = "\n" + "=" * 50 + "\n"
-            history_summary += "📜 历史辩论记录（请仔细区分我方vs对方观点！）\n"
-            history_summary += "=" * 50 + "\n"
-            
-            for record in debate_history:
-                history_summary += f"\n--- 第 {record['round']} 轮 ---\n"
-                my_view = record[my_key]
-                opp_view = record[opp_key]
-                
-                # 收集我方观点摘要
-                my_previous_points.append(my_view[:200])
-                
-                history_summary += f"\n{my_label}（这是你自己说的！）：\n{my_view[:350]}...\n" if len(my_view) > 350 else f"\n{my_label}（这是你自己说的！）：\n{my_view}\n"
-                history_summary += f"\n{opp_label}（这是对方说的）：\n{opp_view[:350]}...\n" if len(opp_view) > 350 else f"\n{opp_label}（这是对方说的）：\n{opp_view}\n"
-            
-            history_summary += "\n" + "=" * 50 + "\n"
-            
-            # 添加我方观点摘要提醒
-            history_summary += "\n⚠️ 你之前说过的核心观点（不要误认为是对方的观点！）：\n"
-            for i, point in enumerate(my_previous_points, 1):
-                history_summary += f"  {i}. {point[:150]}...\n"
-            history_summary += "\n"
+            for i, r in enumerate(debate_history, 1):
+                my_previous += f"第{i}轮我方：{r[my_key][:150]}...\n"
+                opp_previous += f"第{i}轮对方：{r[opp_key][:150]}...\n"
         
-        # 根据是否有对方观点构建不同的提示
-        if opponent_view:
-            # 有对方观点，需要反驳
-            prompt = f"【辩论主题】{topic}\n"
-            if history_summary:
-                prompt += history_summary
-            prompt += f"\n【{cfg['opponent']}的最新发言】\n{opponent_view}\n"
-            prompt += f"""
-╔══════════════════════════════════════════════════════════╗
-║  ⚠️ 极其重要：如何正确识别"对方的原创观点"              ║
-╠══════════════════════════════════════════════════════════╣
-║  当对方说「对方说：'xxx'」或「针对{cfg['position']}的'xxx'」时：    ║
-║  → 'xxx' 是【你自己之前说的话】，不是对方的观点！        ║
-║  → 对方在引用之后的反驳/评论才是【对方的原创观点】       ║
-║                                                          ║
-║  例如，如果对方说：                                      ║
-║  「对方说：'技术会进步'」→ 这个观点忽视了物理限制...    ║
-║                                                          ║
-║  那么：                                                  ║
-║  ✗ '技术会进步' = 你自己说的（不要反驳自己！）          ║
-║  ✓ '忽视了物理限制' = 对方的原创观点（这才要反驳）      ║
-╚══════════════════════════════════════════════════════════╝
-"""
-            if judge_feedback:
-                prompt += f"\n【裁判C的评判和建议】\n{judge_feedback}\n"
-            
-            # 判断是否是本智能体的首次发言（有对方观点但无历史记录 = B的首轮）
-            is_my_first_speech = not debate_history
-            
-            if is_my_first_speech:
-                # B的首轮发言：有A的观点需要反驳，但这是B的首次发言
-                prompt += f"""
-你是{cfg['position']}，这是你的首次发言，请按以下格式回复：
-1. 【我的立场】：明确表态{cfg['action']}辩题主张（一句话）
-2. 【核心论据】：2-3个{cfg['action']}辩题的有力论据
-   ⚠️ 检查：每个论据是否真的支持"{cfg['action']}"？不支持就删掉换一个
-3. 【反驳对方观点】：
-   - 对方的观点：「...」
-   - 我的反驳：..."""
-            else:
-                # 后续轮次：需要提出新论据，不能重复
-                prompt += f"""
-你是{cfg['position']}，请按以下格式回复：
-1. 【我的立场】：一句话表态{cfg['action']}
-2. 【新论据】：1-2个**之前未提过的**新论据
-   ⚠️ 检查历史记录中【我方】的发言，确保不重复！
-3. 【反驳对方观点】：
-   ⚠️ 注意：反驳的必须是对方的观点，不是你自己之前说的话！
-   - 对方的观点：「...」
-   - 我的反驳：...
-4. 【回应对方对我的质疑】：对方批评了我的哪些观点？我如何回应？
+        verify_prompt = f"""检查以下辩论发言：
+【主题】{topic}
+【立场】{cfg['position']}（必须{cfg['action']}）
+【我方历史】{my_previous or "无"}
+【对方历史】{opp_previous or "无"}
+【发言】{response}
 
-⚠️ 再次提醒：上方历史记录中标注【我方】的内容是你自己说的，不要误认为是对方的观点！"""
-            if judge_feedback:
-                prompt += f"\n5. 【回应裁判】：针对裁判指出的问题逐一回应"
-        else:
-            # A的首轮发言：陈述立场和论据，并预判对方可能的反驳
-            prompt = f"""【辩论主题】{topic}
+检查：1.论据是否支持"{cfg['action']}" 2.是否错误反驳了自己的观点
+返回JSON：{{"consistent": true/false, "attribution_correct": true/false, "problems": []}}"""
 
-你是{cfg['position']}，这是你的首次发言，请按以下格式回复：
-1. 【我的立场】：明确表态{cfg['action']}辩题主张（一句话）
-2. 【核心论据】：2-3个{cfg['action']}辩题的有力论据
-   ⚠️ 检查：每个论据是否真的支持"{cfg['action']}"？不支持就删掉换一个
-3. 【预判并反驳对方可能的论据】：思考{cfg['opponent']}可能会提出什么论据，提前反驳：
-   - 对方可能说：「...」
-   - 我的预先反驳：...
+        for retry in range(max_retries):
+            try:
+                verification = self.generate(verify_prompt, "")
+                json_match = re.search(r'\{[^{}]*\}', verification, re.DOTALL)
+                if json_match:
+                    result = json.loads(json_match.group())
+                    if result.get("consistent", True) and result.get("attribution_correct", True):
+                        return self._clean_response(response)
+                    elif retry < max_retries - 1:
+                        problems = result.get("problems", [])
+                        fix_prompt = f"问题：{problems}\n请重新生成发言，主题：{topic}"
+                        response = self.generate(fix_prompt, "")
+                return self._clean_response(response)
+            except Exception:
+                return self._clean_response(response)
+        return self._clean_response(response)
 
-注意：这是首轮发言，不需要回应裁判。"""
-        
-        return self.generate(prompt, context)
-
-
-# =============================================================================
-# 具体智能体类 - 为便于使用提供的简单封装
-# =============================================================================
 
 class DebateAgentA(DebateAgent):
-    """
-    正方辩论智能体
-    
-    支持辩题主张，从积极/肯定的角度进行论证。
-    
-    使用示例
-    --------
-    >>> agent = DebateAgentA()
-    >>> view = agent.debate("人工智能是否会取代人类工作")
-    """
+    """正方辩论智能体"""
     def __init__(self, use_search: bool = True, use_rag: bool = True):
         super().__init__(stance="pro", use_search=use_search, use_rag=use_rag)
 
 
 class DebateAgentB(DebateAgent):
-    """
-    反方辩论智能体
-    
-    反对辩题主张，从审慎/否定的角度进行论证。
-    
-    使用示例
-    --------
-    >>> agent = DebateAgentB()
-    >>> view = agent.debate("人工智能是否会取代人类工作", opponent_view="...")
-    """
+    """反方辩论智能体"""
     def __init__(self, use_search: bool = True, use_rag: bool = True):
         super().__init__(stance="con", use_search=use_search, use_rag=use_rag)
