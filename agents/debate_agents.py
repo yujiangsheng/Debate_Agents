@@ -203,10 +203,24 @@ class DebateAgent(BaseAgent):
         for pattern in internal_prompts:
             cleaned = re.sub(pattern, '', cleaned, flags=re.MULTILINE)
         
-        # 移除元评论
-        for pattern in [r'\n+这样修改后[^\n]*$', r'\n+以上[是为]?[^\n]*修改[^\n]*$',
-                        r'\n+希望[^\n]*能[^\n]*$', r'\n+请根据[^\n]*进行[^\n]*$']:
-            cleaned = re.sub(pattern, '', cleaned)
+        # 移除元评论/反思性文字（不应该出现在辩论中）
+        meta_patterns = [
+            r'\n+这样修改后[^\n]*$',
+            r'\n+以上[是为]?[^\n]*修改[^\n]*$',
+            r'\n+希望[^\n]*能[^\n]*$',
+            r'\n+请根据[^\n]*进行[^\n]*$',
+            # 移除"通过以上调整，确保了..."这类反思性总结
+            r'\n*通过以上[调整修改][，,][^\n]*[。.]?\s*$',
+            r'\n*通过上述[调整修改论据][，,][^\n]*[。.]?\s*$',
+            # 移除其他反思性表述
+            r'\n*以上[论述内容][确保保证][了]?[^\n]*[。.]?\s*$',
+            r'\n*经过[以上]*[调整修改][，,]?[^\n]*避免[^\n]*[。.]?\s*$',
+            r'\n*这样[就能够可以]*[确保避免][^\n]*[。.]?\s*$',
+            # 移除关于修改/调整的自我评价
+            r'\n*[综上所述]*[，,]?[我我们][已经对]*[以上上述][内容论点][进行了]*[修改调整][^\n]*[。.]?\s*$',
+        ]
+        for pattern in meta_patterns:
+            cleaned = re.sub(pattern, '', cleaned, flags=re.MULTILINE)
         
         # 移除多余的空行
         return re.sub(r'\n{3,}', '\n\n', cleaned).strip()
